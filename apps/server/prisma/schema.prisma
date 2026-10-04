@@ -1,0 +1,284 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Organization {
+  id                  String          @id @default(uuid())
+  name                String
+  slug                String          @unique
+  mode                String          @default("SOLO") // "SOLO" | "COMPANY"
+  autoPilotEnabled    Boolean         @default(true)
+  autoPilotDelaySec   Int             @default(3) // Delay after call ends before sending
+  subscriptionStatus  String          @default("ACTIVE")
+  smsBalance          Int             @default(50) // Free trial credits
+  settings            String?         // JSON settings string
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  branches            Branch[]
+  users               User[]
+  devices             Device[]
+  customers           Customer[]
+  callLogs            CallLog[]
+  templates           Template[]
+  messageLogs         MessageLog[]
+  orders              Order[]
+  pipelineStages      PipelineStage[]
+  deals               Deal[]
+  customerNotes       CustomerNote[]
+  crmTasks            CrmTask[]
+}
+
+model Branch {
+  id              String          @id @default(uuid())
+  organizationId  String
+  name            String
+  address         String?
+  latitude        Float?
+  longitude       Float?
+  phoneNumbers    String?         // Comma-separated phone numbers
+  isMain          Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users           User[]
+  devices         Device[]
+  callLogs        CallLog[]
+  templates       Template[]
+  messageLogs     MessageLog[]
+  orders          Order[]
+  deals           Deal[]
+  crmTasks        CrmTask[]
+}
+
+model User {
+  id              String          @id @default(uuid())
+  organizationId  String
+  branchId        String?
+  phone           String          @unique
+  fullName        String
+  role            String          @default("SOLO") // "SUPER_ADMIN" | "COMPANY_OWNER" | "BRANCH_MANAGER" | "BRANCH_OPERATOR" | "SOLO"
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch          Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  deals           Deal[]
+  customerNotes   CustomerNote[]
+  crmTasks        CrmTask[]
+  assignedCustomers Customer[]
+}
+
+model Device {
+  id              String          @id @default(uuid())
+  organizationId  String
+  branchId        String?
+  deviceToken     String          @unique
+  modelName       String?
+  batteryLevel    Int?
+  lastHeartbeatAt DateTime        @default(now())
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch          Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  callLogs        CallLog[]
+}
+
+model Customer {
+  id              String          @id @default(uuid())
+  organizationId  String
+  assignedUserId  String?
+  phoneNumber     String
+  fullName        String?
+  companyName     String?
+  address         String?
+  telegramChatId  String?
+  leadSource      String          @default("INCOMING_CALL") // "INCOMING_CALL" | "TELEGRAM" | "WEBSITE" | "MANUAL"
+  tags            String?         // Comma-separated tags: e.g. "VIP,Sovuq,Konditsioner"
+  totalOrders     Int             @default(0)
+  totalSpent      Float           @default(0.0)
+  lastCallAt      DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedUser    User?           @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  callLogs        CallLog[]
+  messageLogs     MessageLog[]
+  orders          Order[]
+  deals           Deal[]
+  notes           CustomerNote[]
+  tasks           CrmTask[]
+
+  @@unique([organizationId, phoneNumber])
+}
+
+model PipelineStage {
+  id              String          @id @default(uuid())
+  organizationId  String
+  name            String          // e.g. "Yangi Lead", "Havola Ochildi", "Muzokarada", "Buyurtma", "Yopildi"
+  orderIndex      Int             @default(0)
+  color           String          @default("#3b82f6") // Hex color
+  isWon           Boolean         @default(false)
+  isLost          Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deals           Deal[]
+}
+
+model Deal {
+  id              String          @id @default(uuid())
+  organizationId  String
+  branchId        String?
+  customerId      String
+  stageId         String
+  assignedUserId  String?
+  title           String          // e.g. "Artel Konditsioner xaridi"
+  amount          Float           @default(0.0)
+  status          String          @default("OPEN") // "OPEN" | "WON" | "LOST"
+  lostReason      String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch          Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  stage           PipelineStage   @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  assignedUser    User?           @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+}
+
+model CustomerNote {
+  id              String          @id @default(uuid())
+  organizationId  String
+  customerId      String
+  userId          String?
+  content         String
+  createdAt       DateTime        @default(now())
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  user            User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model CrmTask {
+  id              String          @id @default(uuid())
+  organizationId  String
+  branchId        String?
+  customerId      String?
+  assignedUserId  String?
+  title           String          // e.g. "Ertaga soat 15:00 da qayta qo'ng'iroq qilish"
+  dueDate         DateTime
+  priority        String          @default("MEDIUM") // "LOW" | "MEDIUM" | "HIGH"
+  status          String          @default("PENDING") // "PENDING" | "COMPLETED" | "CANCELLED"
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch          Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  customer        Customer?       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  assignedUser    User?           @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+}
+
+model CallLog {
+  id                String          @id @default(uuid())
+  organizationId    String
+  branchId          String?
+  customerId        String?
+  deviceId          String?
+  callerNumber      String
+  destinationNumber String?
+  direction         String          @default("INBOUND") // "INBOUND" | "OUTBOUND"
+  status            String          @default("RINGING") // "RINGING" | "ANSWERED" | "MISSED" | "REJECTED"
+  duration          Int             @default(0) // Duration in seconds
+  startedAt         DateTime        @default(now())
+  endedAt           DateTime?
+
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch            Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  customer          Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  device            Device?         @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  messageLogs       MessageLog[]
+}
+
+model Template {
+  id                  String          @id @default(uuid())
+  organizationId      String
+  branchId            String?
+  title               String          // e.g. "Asosiy narxlar va katalog"
+  messageText         String          // SMS / TG text: e.g. "Salom! Do'konimiz katalogi va narxlari: {link}"
+  cardTitle           String?         // Micro-landing heading
+  cardDescription     String?         // Micro-landing details
+  cardImageUrl        String?         // Product image / banner
+  price               Float?          // Highlighted item price
+  ctaTelegramLink     String?         // e.g. "https://t.me/artel_support"
+  ctaMapsLink         String?         // e.g. "https://yandex.uz/maps/..."
+  isAutoPilotDefault  Boolean         @default(false)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  organization        Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch              Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  messageLogs         MessageLog[]
+}
+
+model MessageLog {
+  id              String          @id @default(uuid())
+  organizationId  String
+  branchId        String?
+  customerId      String
+  callLogId       String?
+  templateId      String?
+  channel         String          @default("SMS") // "SMS" | "TELEGRAM"
+  status          String          @default("PENDING") // "PENDING" | "SENT" | "DELIVERED" | "FAILED" | "OPENED"
+  shortCode       String          @unique // e.g. "v9Kp2"
+  cost            Float           @default(0.0)
+  sentAt          DateTime        @default(now())
+  openedAt        DateTime?
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch          Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  callLogIdRel    CallLog?        @relation(fields: [callLogId], references: [id], onDelete: SetNull)
+  template        Template?       @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  events          CustomerEvent[]
+  orders          Order[]
+}
+
+model CustomerEvent {
+  id            String          @id @default(uuid())
+  messageLogId  String
+  eventType     String          // "PAGE_VIEW" | "TELEGRAM_CLICK" | "MAP_CLICK" | "ORDER_CLICK"
+  ipAddress     String?
+  userAgent     String?
+  metadata      String?         // JSON metadata
+  createdAt     DateTime        @default(now())
+
+  messageLog    MessageLog      @relation(fields: [messageLogId], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id              String          @id @default(uuid())
+  organizationId  String
+  branchId        String?
+  customerId      String
+  messageLogId    String?
+  status          String          @default("NEW") // "NEW" | "PROCESSING" | "COMPLETED" | "CANCELLED"
+  totalAmount     Float           @default(0.0)
+  itemsSummary    String?         // Summary of items or note
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch          Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  messageLog      MessageLog?     @relation(fields: [messageLogId], references: [id], onDelete: SetNull)
+}
